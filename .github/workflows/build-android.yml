@@ -35,12 +35,25 @@ jobs:
           npx ionic cordova prepare android --no-interactive
 
       - name: Build release APK
-        run: npx ionic cordova build android --release --no-interactive
+        run: npx ionic cordova build android --release --no-interactive -- --packageType=apk
 
       - name: Locate generated APKs
         run: |
           echo "Searching for APK files after build..."
           find . -type f -name "*.apk" | sort || true
+
+      - name: Validate signing secrets
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -e
+          [ -n "$ANDROID_KEYSTORE_BASE64" ] || (echo "Missing secret: ANDROID_KEYSTORE_BASE64" && exit 1)
+          [ -n "$ANDROID_KEYSTORE_PASSWORD" ] || (echo "Missing secret: ANDROID_KEYSTORE_PASSWORD" && exit 1)
+          [ -n "$ANDROID_KEY_ALIAS" ] || (echo "Missing secret: ANDROID_KEY_ALIAS" && exit 1)
+          [ -n "$ANDROID_KEY_PASSWORD" ] || (echo "Missing secret: ANDROID_KEY_PASSWORD" && exit 1)
 
       - name: Decode Android keystore
         env:
