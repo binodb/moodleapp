@@ -37,6 +37,11 @@ jobs:
       - name: Build unsigned release APK
         run: npx ionic cordova build android --release --no-interactive
 
+      - name: Locate generated APKs
+        run: |
+          echo "Searching for APK files after build..."
+          find . -type f -name "*.apk" | sort || true
+
       - name: Decode Android keystore
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -50,9 +55,10 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -e
-          UNSIGNED_APK="$(find platforms/android/app/build/outputs/apk/release -name '*-unsigned.apk' | head -n 1)"
+          UNSIGNED_APK="$(find . -type f -name '*-unsigned.apk' | head -n 1)"
           if [ -z "$UNSIGNED_APK" ]; then
-            echo "Unsigned APK not found."
+            echo "Unsigned APK not found. Dumping APK candidates:"
+            find . -type f -name "*.apk" | sort || true
             exit 1
           fi
 
