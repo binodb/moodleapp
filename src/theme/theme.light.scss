@@ -69,6 +69,16 @@
     @each $color-name, $unused in $colors {
         @include generate-color($color-name, $colors, 'light');
     }
+    --ion-color-primary: #2d6bbf;
+    --ion-color-primary-rgb: 45,107,191;
+    --ion-color-primary-contrast: #ffffff;
+    --ion-color-primary-contrast-rgb: 255,255,255;
+    --ion-color-primary-shade: #2860a8;
+    --ion-color-primary-tint: #4279c5;
+    --primary: #2d6bbf;
+    --primary-shade: #2860a8;
+    --primary-tint: #4279c5;
+    --primary-contrast: #ffffff;
 
     // Accessibility vars.
     --a11y-shadow-focus-boxShadowColor: #{$blue};
