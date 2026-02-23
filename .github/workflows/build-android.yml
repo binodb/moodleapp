@@ -34,8 +34,10 @@ jobs:
           npx ionic cordova platform add android@14.0.1 --no-interactive || true
           npx ionic cordova prepare android --no-interactive
 
-      - name: Build unsigned release APK
-        run: npx ionic cordova build android --release --no-interactive
+      - name: Build release APK (Gradle)
+        run: |
+          cd platforms/android
+          ./gradlew clean assembleRelease
 
       - name: Locate generated APKs
         run: |
@@ -56,6 +58,9 @@ jobs:
         run: |
           set -e
           UNSIGNED_APK="$(find . -type f -name '*-unsigned.apk' | head -n 1)"
+          if [ -z "$UNSIGNED_APK" ]; then
+            UNSIGNED_APK="$(find . -type f -name '*release*.apk' | head -n 1)"
+          fi
           if [ -z "$UNSIGNED_APK" ]; then
             echo "Unsigned APK not found. Dumping APK candidates:"
             find . -type f -name "*.apk" | sort || true
