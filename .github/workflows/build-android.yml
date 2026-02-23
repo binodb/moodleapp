@@ -62,15 +62,16 @@ jobs:
           printf '%s' "$ANDROID_KEYSTORE_BASE64" \
             | tr '_-' '/+' \
             | tr -d '\r\n\t ' \
-            | base64 --decode --ignore-garbage > iincertfi-release.jks
+            | base64 --decode > iincertfi-release.jks
 
       - name: Validate decoded keystore
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
           set -e
+          KS_PASS="$(printf '%s' "$ANDROID_KEYSTORE_PASSWORD" | tr -d '\r\n')"
           [ -s iincertfi-release.jks ] || (echo "Decoded keystore is empty." && exit 1)
-          keytool -list -keystore iincertfi-release.jks -storepass "$ANDROID_KEYSTORE_PASSWORD" >/dev/null
+          keytool -list -keystore iincertfi-release.jks -storepass "$KS_PASS"
 
       - name: Align and sign APK
         env:
@@ -79,6 +80,9 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -e
+          KS_PASS="$(printf '%s' "$ANDROID_KEYSTORE_PASSWORD" | tr -d '\r\n')"
+          KEY_PASS="$(printf '%s' "$ANDROID_KEY_PASSWORD" | tr -d '\r\n')"
+          KEY_ALIAS="$(printf '%s' "$ANDROID_KEY_ALIAS" | tr -d '\r\n')"
           APK_CANDIDATE="$(find platforms/android/app/build/outputs/apk/release -type f -name '*-unsigned.apk' 2>/dev/null | head -n 1)"
           if [ -z "$APK_CANDIDATE" ]; then
             APK_CANDIDATE="$(find . -type f -name '*-unsigned.apk' | head -n 1)"
@@ -100,9 +104,9 @@ jobs:
 
           "$BUILD_TOOLS_DIR/apksigner" sign \
             --ks iincertfi-release.jks \
-            --ks-key-alias "$ANDROID_KEY_ALIAS" \
-            --ks-pass pass:"$ANDROID_KEYSTORE_PASSWORD" \
-            --key-pass pass:"$ANDROID_KEY_PASSWORD" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass pass:"$KS_PASS" \
+            --key-pass pass:"$KEY_PASS" \
             --out IINCertFi-release.apk \
             IINCertFi-release-aligned.apk
 
