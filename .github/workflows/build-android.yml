@@ -31,11 +31,11 @@ jobs:
 
       - name: Prepare Android platform
         run: |
-          npx cordova platform add android@14.0.1 || true
-          npx cordova prepare android
+          npx ionic cordova platform add android@14.0.1 --no-interactive || true
+          npx ionic cordova prepare android --no-interactive
 
       - name: Build release APK
-        run: npx cordova build android --release -- --packageType=apk
+        run: npx ionic cordova build android --release --no-interactive -- --packageType=apk
 
       - name: Locate generated APKs
         run: |
