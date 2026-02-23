@@ -31,16 +31,18 @@ jobs:
 
       - name: Prepare Android platform
         run: |
-          npx ionic cordova platform add android@14.0.1 --no-interactive || true
-          npx ionic cordova prepare android --no-interactive
+          npx cordova platform add android@14.0.1 || true
+          npx cordova prepare android
 
       - name: Build release APK
-        run: npx ionic cordova build android --release --no-interactive -- --packageType=apk
+        run: npx cordova build android --release -- --packageType=apk
 
       - name: Locate generated APKs
         run: |
           echo "Searching for APK files after build..."
           find . -type f -name "*.apk" | sort || true
+          echo "Searching for AAB files after build..."
+          find . -type f -name "*.aab" | sort || true
 
       - name: Validate signing secrets
         env:
@@ -96,6 +98,8 @@ jobs:
           if [ -z "$APK_CANDIDATE" ]; then
             echo "Release APK not found. Dumping APK candidates:"
             find . -type f -name "*.apk" | sort || true
+            echo "AAB candidates:"
+            find . -type f -name "*.aab" | sort || true
             exit 1
           fi
 
