@@ -61,10 +61,15 @@ jobs:
           npx ionic cordova platform add android@14.0.1 --no-interactive || true
           npx ionic cordova prepare android --no-interactive
 
-      - name: Build release APK
+      - name: Build web assets and prepare Android
         run: |
-          npx ionic cordova build android --release --no-interactive --packageType=apk -- \
-            -PcdvBuildMultipleApks=false
+          npx ionic cordova prepare android --release --no-interactive
+
+      - name: Build release APK via Gradle
+        working-directory: platforms/android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Locate generated APKs
         if: always()
