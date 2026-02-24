@@ -6,6 +6,11 @@ on:
     branches:
       - main
 
+env:
+  NODE_OPTIONS: "--max-old-space-size=8192"
+  ANDROID_SDK_VERSION: "36"
+  ANDROID_BUILD_TOOLS: "36.0.0"
+
 jobs:
   build-android:
     runs-on: ubuntu-latest
@@ -17,7 +22,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version-file: ".nvmrc"
+          node-version: "22"
           cache: npm
 
       - name: Setup Java 17
@@ -25,6 +30,28 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+
+      - name: Setup Android SDK
+        run: |
+          echo "Accepting Android SDK licenses..."
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          echo "Installing Android SDK platform $ANDROID_SDK_VERSION and build-tools $ANDROID_BUILD_TOOLS..."
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-$ANDROID_SDK_VERSION" \
+            "build-tools;$ANDROID_BUILD_TOOLS" \
+            "platform-tools"
+          echo "Installed SDK packages:"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --list_installed 2>/dev/null || \
+            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --list 2>/dev/null | head -40
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('config.xml') }}
+          restore-keys: gradle-${{ runner.os }}-
 
       - name: Install dependencies
         run: npm ci --no-audit
@@ -35,14 +62,20 @@ jobs:
           npx ionic cordova prepare android --no-interactive
 
       - name: Build release APK
-        run: npx ionic cordova build android --release --no-interactive -- --packageType=apk
+        run: |
+          npx ionic cordova build android --release --no-interactive -- \
+            --packageType=apk \
+            --gradleArg=-PcdvBuildMultipleApks=false
 
       - name: Locate generated APKs
+        if: always()
         run: |
-          echo "Searching for APK files after build..."
-          find . -type f -name "*.apk" | sort || true
-          echo "Searching for AAB files after build..."
-          find . -type f -name "*.aab" | sort || true
+          echo "=== APK files ==="
+          find . -type f -name "*.apk" 2>/dev/null | sort || echo "No APK found"
+          echo "=== AAB files ==="
+          find . -type f -name "*.aab" 2>/dev/null | sort || echo "No AAB found"
+          echo "=== Build output directory ==="
+          ls -laR platforms/android/app/build/outputs/ 2>/dev/null || echo "Build outputs dir not found"
 
       - name: Validate signing secrets
         env:
@@ -52,10 +85,11 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -e
-          [ -n "$ANDROID_KEYSTORE_BASE64" ] || (echo "Missing secret: ANDROID_KEYSTORE_BASE64" && exit 1)
-          [ -n "$ANDROID_KEYSTORE_PASSWORD" ] || (echo "Missing secret: ANDROID_KEYSTORE_PASSWORD" && exit 1)
-          [ -n "$ANDROID_KEY_ALIAS" ] || (echo "Missing secret: ANDROID_KEY_ALIAS" && exit 1)
-          [ -n "$ANDROID_KEY_PASSWORD" ] || (echo "Missing secret: ANDROID_KEY_PASSWORD" && exit 1)
+          [ -n "$ANDROID_KEYSTORE_BASE64" ] || { echo "::error::Missing secret: ANDROID_KEYSTORE_BASE64"; exit 1; }
+          [ -n "$ANDROID_KEYSTORE_PASSWORD" ] || { echo "::error::Missing secret: ANDROID_KEYSTORE_PASSWORD"; exit 1; }
+          [ -n "$ANDROID_KEY_ALIAS" ] || { echo "::error::Missing secret: ANDROID_KEY_ALIAS"; exit 1; }
+          [ -n "$ANDROID_KEY_PASSWORD" ] || { echo "::error::Missing secret: ANDROID_KEY_PASSWORD"; exit 1; }
+          echo "All signing secrets are present."
 
       - name: Decode Android keystore
         env:
@@ -65,6 +99,7 @@ jobs:
             | tr '_-' '/+' \
             | tr -d '\r\n\t ' \
             | base64 --decode > iincertfi-release.jks
+          echo "Keystore file size: $(stat --format=%s iincertfi-release.jks) bytes"
 
       - name: Validate decoded keystore
         env:
@@ -72,7 +107,7 @@ jobs:
         run: |
           set -e
           KS_PASS="$(printf '%s' "$ANDROID_KEYSTORE_PASSWORD" | tr -d '\r\n')"
-          [ -s iincertfi-release.jks ] || (echo "Decoded keystore is empty." && exit 1)
+          [ -s iincertfi-release.jks ] || { echo "::error::Decoded keystore is empty."; exit 1; }
           keytool -list -keystore iincertfi-release.jks -storepass "$KS_PASS"
 
       - name: Align and sign APK
@@ -85,23 +120,35 @@ jobs:
           KS_PASS="$(printf '%s' "$ANDROID_KEYSTORE_PASSWORD" | tr -d '\r\n')"
           KEY_PASS="$(printf '%s' "$ANDROID_KEY_PASSWORD" | tr -d '\r\n')"
           KEY_ALIAS="$(printf '%s' "$ANDROID_KEY_ALIAS" | tr -d '\r\n')"
-          APK_CANDIDATE="$(find platforms/android/app/build/outputs/apk/release -type f -name '*-unsigned.apk' 2>/dev/null | head -n 1)"
+
+          # Find the unsigned APK
+          APK_CANDIDATE=""
+          for pattern in \
+            "platforms/android/app/build/outputs/apk/release/*-unsigned.apk" \
+            "platforms/android/app/build/outputs/apk/release/*.apk" \
+            ; do
+            APK_CANDIDATE="$(find . -path "./$pattern" 2>/dev/null | head -n 1)"
+            [ -n "$APK_CANDIDATE" ] && break
+          done
+
+          # Broader fallback search
           if [ -z "$APK_CANDIDATE" ]; then
-            APK_CANDIDATE="$(find . -type f -name '*-unsigned.apk' | head -n 1)"
+            APK_CANDIDATE="$(find . -type f -name '*-unsigned.apk' ! -path './node_modules/*' | head -n 1)"
           fi
           if [ -z "$APK_CANDIDATE" ]; then
-            APK_CANDIDATE="$(find platforms/android/app/build/outputs/apk/release -type f -name '*.apk' 2>/dev/null | head -n 1)"
+            APK_CANDIDATE="$(find . -type f -name '*.apk' ! -path './node_modules/*' | head -n 1)"
           fi
+
           if [ -z "$APK_CANDIDATE" ]; then
-            APK_CANDIDATE="$(find . -type f -name '*release*.apk' | head -n 1)"
-          fi
-          if [ -z "$APK_CANDIDATE" ]; then
-            echo "Release APK not found. Dumping APK candidates:"
-            find . -type f -name "*.apk" | sort || true
+            echo "::error::Release APK not found after build."
+            echo "APK candidates:"
+            find . -type f -name "*.apk" ! -path './node_modules/*' | sort || true
             echo "AAB candidates:"
-            find . -type f -name "*.aab" | sort || true
+            find . -type f -name "*.aab" ! -path './node_modules/*' | sort || true
             exit 1
           fi
+
+          echo "Found APK: $APK_CANDIDATE"
 
           BUILD_TOOLS_DIR="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)"
           "$BUILD_TOOLS_DIR/zipalign" -p -f 4 "$APK_CANDIDATE" IINCertFi-release-aligned.apk
@@ -115,6 +162,7 @@ jobs:
             IINCertFi-release-aligned.apk
 
           "$BUILD_TOOLS_DIR/apksigner" verify IINCertFi-release.apk
+          echo "APK signed and verified successfully!"
 
       - name: Upload signed APK
         uses: actions/upload-artifact@v4
