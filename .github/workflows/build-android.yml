@@ -63,9 +63,8 @@ jobs:
 
       - name: Build release APK
         run: |
-          npx ionic cordova build android --release --no-interactive -- \
-            --packageType=apk \
-            --gradleArg=-PcdvBuildMultipleApks=false
+          npx ionic cordova build android --release --no-interactive --packageType=apk -- \
+            -PcdvBuildMultipleApks=false
 
       - name: Locate generated APKs
         if: always()
